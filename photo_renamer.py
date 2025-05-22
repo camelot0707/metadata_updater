@@ -5,6 +5,11 @@ import shutil
 import subprocess
 import tempfile
 
+if shutil.which("exiftool") is None:
+    exit("Error: ExifTool not found. Please copy the .exe found at https://exiftool.org/ into the same directory as this script.")
+else:
+    print("ExifTool found, proceeding...")
+
 def run_exiftool(files, commands):
     """Run exiftool commands on a batch of files using a temp file list"""
     if not files:
@@ -29,11 +34,16 @@ def run_exiftool(files, commands):
 
 def main():
     # Get source and destination folders
-    src_dir = input("Enter source folder: ").strip()
-    dst_dir = input("Enter destination folder: ").strip()
+    src_dir = input("Enter source folder PATH: ").strip()
+    #dst_dir = input("Enter destination folder PATH: ").strip()
     
+    # Create destination directory if it doesn't exist
+    dst_dir = os.path.join(src_dir, "_output")
+    if not os.path.exists(dst_dir):
+        os.makedirs(dst_dir, exist_ok=True)
+
     # Create temporary directory for processing
-    temp_dir = os.path.join(dst_dir, "_temp")
+    temp_dir = os.path.join(src_dir, "_temp")
     os.makedirs(temp_dir, exist_ok=True)
     
     # Lists to track files
