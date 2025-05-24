@@ -10,3 +10,7 @@
 - CD into the PATH of the folder, then start the script by running "python photo_renamer.py"
 - follow the prompt instructions (provide the correct folder PATH, otherwise the script will create new folders inside this folder itself -METADA_UPDATER-)
 - inside the folder of your choice, when the script completed its tasks, you will find a new folder called "_output" with the files, with the updated metadata
+
+## Notice
+- currently supporting inputs of images coming from whatsapp. will be able to take "IMG-YYYYMMDD-WA####.jpg" formatted files (the standard whatsapp naming) and use these information to update the metadata. 
+- currently working to expand the script capabilities to "inteligently" take the file name formatting and extract the date + time, regardless of the fixed structure or not
