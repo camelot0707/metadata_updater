@@ -1,0 +1,404 @@
+[
+  {
+    "format_string": "YYYYMMDD",
+    "example": "20250524",
+    "type": "Date Only",
+    "description": "Compact: YearMonthDay"
+  },
+  {
+    "format_string": "YYYY_MM_DD",
+    "example": "2025_05_24",
+    "type": "Date Only",
+    "description": "Underscore separated: Year_Month_Day"
+  },
+  {
+    "format_string": "YYYY.MM.DD",
+    "example": "2025.05.24",
+    "type": "Date Only",
+    "description": "Dot separated: Year.Month.Day"
+  },
+  {
+    "format_string": "YYYY MM DD",
+    "example": "2025 05 24",
+    "type": "Date Only",
+    "description": "Space separated: Year Month Day"
+  },
+  {
+    "format_string": "DDMMYYYY",
+    "example": "24052025",
+    "type": "Date Only",
+    "description": "Compact: DayMonthYear"
+  },
+  {
+    "format_string": "DD-MM-YYYY",
+    "example": "24-05-2025",
+    "type": "Date Only",
+    "description": "Dash separated: Day-Month-Year"
+  },
+  {
+    "format_string": "DD_MM_YYYY",
+    "example": "24_05_2025",
+    "type": "Date Only",
+    "description": "Underscore separated: Day_Month_Year"
+  },
+  {
+    "format_string": "DD.MM.YYYY",
+    "example": "24.05.2025",
+    "type": "Date Only",
+    "description": "Dot separated: Day.Month.Year"
+  },
+  {
+    "format_string": "DD MM YYYY",
+    "example": "24 05 2025",
+    "type": "Date Only",
+    "description": "Space separated: Day Month Year"
+  },
+  {
+    "format_string": "MMDDYYYY",
+    "example": "05242025",
+    "type": "Date Only",
+    "description": "Compact: MonthDayYear"
+  },
+  {
+    "format_string": "MM-DD-YYYY",
+    "example": "05-24-2025",
+    "type": "Date Only",
+    "description": "Dash separated: Month-Day-Year"
+  },
+  {
+    "format_string": "MM_DD_YYYY",
+    "example": "05_24_2025",
+    "type": "Date Only",
+    "description": "Underscore separated: Month_Day_Year"
+  },
+  {
+    "format_string": "MM.DD.YYYY",
+    "example": "05.24.2025",
+    "type": "Date Only",
+    "description": "Dot separated: Month.Day.Year"
+  },
+  {
+    "format_string": "MM DD YYYY",
+    "example": "05 24 2025",
+    "type": "Date Only",
+    "description": "Space separated: Month Day Year"
+  },
+  {
+    "format_string": "YYYYMMDDHHMMSS",
+    "example": "20250524174400",
+    "type": "Date & Time (Local)",
+    "description": "Compact: YearMonthDayHourMinuteSecond"
+  },
+  {
+    "format_string": "YYYYMMDD_HHMMSS",
+    "example": "20250524_174400",
+    "type": "Date & Time (Local)",
+    "description": "Compact Date, Underscore, Compact Time"
+  },
+  {
+    "format_string": "YYYYMMDD-HHMMSS",
+    "example": "20250524-174400",
+    "type": "Date & Time (Local)",
+    "description": "Compact Date, Dash, Compact Time"
+  },
+  {
+    "format_string": "YYYYMMDD.HHMMSS",
+    "example": "20250524.174400",
+    "type": "Date & Time (Local)",
+    "description": "Compact Date, Dot, Compact Time"
+  },
+  {
+    "format_string": "YYYYMMDD HHMMSS",
+    "example": "20250524 174400",
+    "type": "Date & Time (Local)",
+    "description": "Compact Date, Space, Compact Time"
+  },
+  {
+    "format_string": "YYYY-MM-DD_HH-MM-SS",
+    "example": "2025-05-24_17-44-00",
+    "type": "Date & Time (Local)",
+    "description": "Separated Date (YMD), Underscore, Separated Time"
+  },
+  {
+    "format_string": "YYYY-MM-DD_HHMMSS",
+    "example": "2025-05-24_174400",
+    "type": "Date & Time (Local)",
+    "description": "Separated Date (YMD), Underscore, Compact Time"
+  },
+  {
+    "format_string": "YYYY-MM-DD HH:MM:SS",
+    "example": "2025-05-24 17:44:00",
+    "type": "Date & Time (Local)",
+    "description": "Separated Date (YMD), Space, Colon-Separated Time"
+  },
+  {
+    "format_string": "YYYY-MM-DDTHHMMSS",
+    "example": "2025-05-24T174400",
+    "type": "Date & Time (Local)",
+    "description": "ISO-like Date (YMD), T, Compact Time"
+  },
+  {
+    "format_string": "YYYY-MM-DDTHH:MM:SS",
+    "example": "2025-05-24T17:44:00",
+    "type": "Date & Time (Local)",
+    "description": "ISO-like Date (YMD), T, Colon-Separated Time"
+  },
+  {
+    "format_string": "YYYYMMDDTHHMMSS",
+    "example": "20250524T174400",
+    "type": "Date & Time (Local)",
+    "description": "Compact Date (YMD), T, Compact Time"
+  },
+  {
+    "format_string": "YYYYMMDDTHH:MM:SS",
+    "example": "20250524T17:44:00",
+    "type": "Date & Time (Local)",
+    "description": "Compact Date (YMD), T, Colon-Separated Time"
+  },
+  {
+    "format_string": "YYYYMMDDTHHMMSSZ",
+    "example": "20250524T174400Z",
+    "type": "Date & Time (UTC)",
+    "description": "Compact Date (YMD), T, Compact Time, Z (UTC)"
+  },
+  {
+    "format_string": "YYYY-MM-DDTHH:MM:SSZ",
+    "example": "2025-05-24T17:44:00Z",
+    "type": "Date & Time (UTC)",
+    "description": "ISO-like Date (YMD), T, Colon-Separated Time, Z (UTC)"
+  },
+  {
+    "format_string": "YYYYMMDDTHHMMSS+hhmm",
+    "example": "20250524T174400+1000",
+    "type": "Date & Time (Offset)",
+    "description": "Compact Date (YMD), T, Compact Time, Offset (+hhmm)"
+  },
+  {
+    "format_string": "YYYY-MM-DDTHH:MM:SS+hh:mm",
+    "example": "2025-05-24T17:44:00+10:00",
+    "type": "Date & Time (Offset)",
+    "description": "ISO-like Date (YMD), T, Colon-Separated Time, Offset (+hh:mm)"
+  },
+  {
+    "format_string": "YYYYMMDDTHHMMSS-hhmm",
+    "example": "20250524T174400-0500",
+    "type": "Date & Time (Offset)",
+    "description": "Compact Date (YMD), T, Compact Time, Offset (-hhmm)"
+  },
+  {
+    "format_string": "YYYY-MM-DDTHH:MM:SS-hh:mm",
+    "example": "2025-05-24T17:44:00-05:00",
+    "type": "Date & Time (Offset)",
+    "description": "ISO-like Date (YMD), T, Colon-Separated Time, Offset (-hh:mm)"
+  },
+  {
+    "format_string": "YYYY_MM_DD_HH_MM_SS",
+    "example": "2025_05_24_17_44_00",
+    "type": "Date & Time (Local)",
+    "description": "Fully Underscore Separated: Year_Month_Day_Hour_Minute_Second"
+  },
+  {
+    "format_string": "YYYY.MM.DD.HH.MM.SS",
+    "example": "2025.05.24.17.44.00",
+    "type": "Date & Time (Local)",
+    "description": "Fully Dot Separated: Year.Month.Day.Hour.Minute.Second"
+  },
+  {
+    "format_string": "YYYY MM DD HH MM SS",
+    "example": "2025 05 24 17 44 00",
+    "type": "Date & Time (Local)",
+    "description": "Fully Space Separated: Year Month Day Hour Minute Second"
+  },
+  {
+    "format_string": "DDMMYYYY_HHMMSS",
+    "example": "24052025_174400",
+    "type": "Date & Time (Local)",
+    "description": "Compact Date (DMY), Underscore, Compact Time"
+  },
+  {
+    "format_string": "DD-MM-YYYY_HH-MM-SS",
+    "example": "24-05-2025_17-44-00",
+    "type": "Date & Time (Local)",
+    "description": "Separated Date (DMY), Underscore, Separated Time"
+  },
+  {
+    "format_string": "DD.MM.YYYY.HH.MM.SS",
+    "example": "24.05.2025.17.44.00",
+    "type": "Date & Time (Local)",
+    "description": "Fully Dot Separated (DMY): Day.Month.Year.Hour.Minute.Second"
+  },
+  {
+    "format_string": "DD MM YYYY HH MM SS",
+    "example": "24 05 2025 17 44 00",
+    "type": "Date & Time (Local)",
+    "description": "Fully Space Separated (DMY): Day Month Year Hour Minute Second"
+  },
+  {
+    "format_string": "MMDDYYYY_HHMMSS",
+    "example": "05242025_174400",
+    "type": "Date & Time (Local)",
+    "description": "Compact Date (MDY), Underscore, Compact Time"
+  },
+  {
+    "format_string": "MM-DD-YYYY_HH-MM-SS",
+    "example": "05-24-2025_17-44-00",
+    "type": "Date & Time (Local)",
+    "description": "Separated Date (MDY), Underscore, Separated Time"
+  },
+  {
+    "format_string": "MM.DD.YYYY.HH.MM.SS",
+    "example": "05.24.2025.17.44.00",
+    "type": "Date & Time (Local)",
+    "description": "Fully Dot Separated (MDY): Month.Day.Year.Hour.Minute.Second"
+  },
+  {
+    "format_string": "MM DD YYYY HH MM SS",
+    "example": "05 24 2025 17 44 00",
+    "type": "Date & Time (Local)",
+    "description": "Fully Space Separated (MDY): Month Day Year Hour Minute Second"
+  },
+  {
+    "format_string": "YYYY",
+    "example": "2025",
+    "type": "Date Only (Partial)",
+    "description": "Year only"
+  },
+  {
+    "format_string": "YYYYMM",
+    "example": "202505",
+    "type": "Date Only (Partial)",
+    "description": "Compact: YearMonth"
+  },
+  {
+    "format_string": "YYYY-MM",
+    "example": "2025-05",
+    "type": "Date Only (Partial)",
+    "description": "Dash separated: Year-Month"
+  },
+  {
+    "format_string": "YYYY_MM",
+    "example": "2025_05",
+    "type": "Date Only (Partial)",
+    "description": "Underscore separated: Year_Month"
+  },
+  {
+    "format_string": "YYYY.MM",
+    "example": "2025.05",
+    "type": "Date Only (Partial)",
+    "description": "Dot separated: Year.Month"
+  },
+  {
+    "format_string": "YYYY MM",
+    "example": "2025 05",
+    "type": "Date Only (Partial)",
+    "description": "Space separated: Year Month"
+  },
+  {
+    "format_string": "MMYYYY",
+    "example": "052025",
+    "type": "Date Only (Partial)",
+    "description": "Compact: MonthYear"
+  },
+  {
+    "format_string": "MM-YYYY",
+    "example": "05-2025",
+    "type": "Date Only (Partial)",
+    "description": "Dash separated: Month-Year"
+  },
+  {
+    "format_string": "MM_YYYY",
+    "example": "05_2025",
+    "type": "Date Only (Partial)",
+    "description": "Underscore separated: Month_Year"
+  },
+  {
+    "format_string": "MM.YYYY",
+    "example": "05.2025",
+    "type": "Date Only (Partial)",
+    "description": "Dot separated: Month.Year"
+  },
+  {
+    "format_string": "MM YYYY",
+    "example": "05 2025",
+    "type": "Date Only (Partial)",
+    "description": "Space separated: Month Year"
+  },
+  {
+    "format_string": "YYMMDD",
+    "example": "250524",
+    "type": "Date Only (Short Year)",
+    "description": "Compact: ShortYearMonthDay"
+  },
+  {
+    "format_string": "YY-MM-DD",
+    "example": "25-05-24",
+    "type": "Date Only (Short Year)",
+    "description": "Dash separated: ShortYear-Month-Day"
+  },
+  {
+    "format_string": "YYMMDD_HHMMSS",
+    "example": "250524_174400",
+    "type": "Date & Time (Local, Short Year)",
+    "description": "Compact Date (ShortYear), Underscore, Compact Time"
+  },
+  {
+    "format_string": "YY-MM-DD_HH-MM-SS",
+    "example": "25-05-24_17-44-00",
+    "type": "Date & Time (Local, Short Year)",
+    "description": "Separated Date (ShortYear), Underscore, Separated Time"
+  },
+  {
+    "format_string": "YYYYMMDD_hhmmssAM",
+    "example": "20250524_054400AM",
+    "type": "Date & Time (Local, AM/PM)",
+    "description": "Compact Date, Underscore, Compact Time (12hr) with AM suffix"
+  },
+  {
+    "format_string": "YYYYMMDD_hhmmssPM",
+    "example": "20250524_054400PM",
+    "type": "Date & Time (Local, AM/PM)",
+    "description": "Compact Date, Underscore, Compact Time (12hr) with PM suffix"
+  },
+  {
+    "format_string": "YYYY-MM-DD hh:mm:ss AM",
+    "example": "2025-05-24 05:44:00 AM",
+    "type": "Date & Time (Local, AM/PM)",
+    "description": "Separated Date, Space, Separated Time (12hr) with AM suffix (space before AM)"
+  },
+  {
+    "format_string": "YYYY-MM-DD hh:mm:ss PM",
+    "example": "2025-05-24 05:44:00 PM",
+    "type": "Date & Time (Local, AM/PM)",
+    "description": "Separated Date, Space, Separated Time (12hr) with PM suffix (space before PM)"
+  },
+  {
+    "format_string": "YYYYMMDD_HHMMSSfff",
+    "example": "20250524_174400123",
+    "type": "Date & Time (Local, Milliseconds)",
+    "description": "Compact Date, Underscore, Compact Time with Milliseconds"
+  },
+  {
+    "format_string": "YYYY-MM-DD_HH-MM-SS-fff",
+    "example": "2025-05-24_17-44-00-123",
+    "type": "Date & Time (Local, Milliseconds)",
+    "description": "Separated Date, Underscore, Separated Time with Milliseconds (dash separator for ms)"
+  },
+  {
+    "format_string": "YYYY-MM-DDTHH:MM:SS.fff",
+    "example": "2025-05-24T17:44:00.123",
+    "type": "Date & Time (Local, Milliseconds)",
+    "description": "ISO-like Date, T, Colon-Separated Time with Milliseconds (dot separator for ms)"
+  },
+  {
+    "format_string": "YYYY-Www",
+    "example": "2025-W21",
+    "type": "Date Only (Week Number)",
+    "description": "Year and ISO Week Number (e.g., W21 for 21st week)"
+  },
+  {
+    "format_string": "YYYYDDD",
+    "example": "2025144",
+    "type": "Date Only (Day of Year)",
+    "description": "Year and Day of Year (Ordinal Day, e.g., 144th day)"
+  }
+]
