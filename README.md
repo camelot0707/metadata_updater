@@ -4,3 +4,9 @@
 ## Requirements
 - Python 3.11+ (consider using anaconda https://anaconda.org/ as you'll be able to swap between python versions easily)
 - ExifTool (https://exiftool.org/) (included in the folder when pulled/cloned)
+
+## Usage
+- clone or pull this into a folder of your choice, the sub-folder called "metadata-updater" will be created, containing the .py script to run
+- CD into the PATH of the folder, then start the script by running "python photo_renamer.py"
+- follow the prompt instructions (provide the correct folder PATH, otherwise the script will create new folders inside this folder itself -METADA_UPDATER-)
+- inside the folder of your choice, when the script completed its tasks, you will find a new folder called "_output" with the files, with the updated metadata
