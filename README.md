@@ -3,4 +3,4 @@
 
 ## Requirements
 - Python 3.11
-- ExifTool (https://exiftool.org/)
+- ExifTool (https://exiftool.org/) (included in the folder when pulled/cloned)
