@@ -230,12 +230,13 @@ def run_exiftool_batch(files_to_update_with_commands):
     Run exiftool commands on batches of files.
     files_to_update_with_commands is a list of tuples: (filepath, list_of_exiftool_args)
     This function tries to batch files that have the *exact same* set of commands.
+    Returns a set of temporary file paths that were successfully updated by ExifTool.
     """
     if not files_to_update_with_commands:
-        return 0
+        return set() # Return empty set
     if EXIFTOOL_EXECUTABLE is None:
         print("Critical Error: EXIFTOOL_EXECUTABLE path not set before running batch.")
-        return 0 # Or raise an exception
+        return set() # Return empty set
 
     # Group files by their command list (as a tuple to be hashable)
     command_groups = {}
@@ -245,23 +246,23 @@ def run_exiftool_batch(files_to_update_with_commands):
             command_groups[command_tuple] = []
         command_groups[command_tuple].append(filepath)
 
-    total_files_reported_updated_by_exiftool = 0
+    successfully_updated_temp_paths = set() # Initialize set for successful updates
     processed_batch_count = 0
     exiftool_dir = os.path.dirname(EXIFTOOL_EXECUTABLE) # Get ExifTool's directory
 
-    for commands_tuple, filepaths in command_groups.items():
+    for commands_tuple, filepaths_in_batch in command_groups.items(): # Renamed filepaths to filepaths_in_batch
         processed_batch_count += 1
-        if not filepaths:
+        if not filepaths_in_batch:
             continue
         
         temp_filename = None
         print(f"\n--- Processing Batch {processed_batch_count} ---")
         print(f"Commands: {commands_tuple}")
-        print(f"Files in this batch ({len(filepaths)}): {filepaths[:3]}..." if len(filepaths) > 3 else filepaths)
+        print(f"Files in this batch ({len(filepaths_in_batch)}): {filepaths_in_batch[:3]}..." if len(filepaths_in_batch) > 3 else filepaths_in_batch)
 
         try:
             with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt', encoding='utf-8') as f:
-                f.write('\n'.join(filepaths))
+                f.write('\n'.join(filepaths_in_batch))
                 temp_filename = f.name
             
             cmd = [EXIFTOOL_EXECUTABLE, '-S', '-@', temp_filename] + list(commands_tuple)
@@ -289,12 +290,16 @@ def run_exiftool_batch(files_to_update_with_commands):
 
                 if match:
                     updated_in_this_batch = int(match.group(1))
-                    total_files_reported_updated_by_exiftool += updated_in_this_batch
+                    # total_files_reported_updated_by_exiftool += updated_in_this_batch # No longer summing here
                     print(f"  ExifTool reported {updated_in_this_batch} file(s) updated in this batch.")
+                    if updated_in_this_batch > 0:
+                        # Add all files from this successful batch to the set
+                        for fp_temp in filepaths_in_batch:
+                            successfully_updated_temp_paths.add(fp_temp)
                 elif "0 image files updated" in stdout_lower or \
                      "0 files updated" in stdout_lower or \
                      "files unchanged" in stdout_lower or \
-                     (not stdout_lower.strip() and len(filepaths) > 0): # Check for empty output if files were processed
+                     (not stdout_lower.strip() and len(filepaths_in_batch) > 0): # Check for empty output if files were processed
                     print(f"  ExifTool reported 0 files updated or files unchanged in this batch (Return Code 0).")
                 else:
                     # This case means return code was 0, but output didn't match known success patterns.
@@ -305,7 +310,7 @@ def run_exiftool_batch(files_to_update_with_commands):
                      print(f"  Warning: ExifTool returned error code {process.returncode}. Potential Perl DLL issue: {process.stderr.strip().splitlines()[0]}")
                 else:
                     print(f"  Warning: ExifTool returned error code {process.returncode} for this batch.")
-
+                # Files in a failed batch are not added to successfully_updated_temp_paths
 
         except Exception as e:
             print(f"  An unexpected error occurred during ExifTool batch processing: {e}")
@@ -317,7 +322,7 @@ def run_exiftool_batch(files_to_update_with_commands):
                     print(f"  Warning: Could not delete temp file {temp_filename}: {e_unlink}")
         print("--- End Batch ---")
     
-    return total_files_reported_updated_by_exiftool
+    return successfully_updated_temp_paths # Return the set of successfully updated temp file paths
 
 # --- Main ---
 def main():
@@ -339,115 +344,198 @@ def main():
         return
 
     dst_dir = os.path.join(src_dir, "_output_metadata_edited")
+    outliers_dir = os.path.join(src_dir, "_output_outliers") # New directory for outliers
+    
     if not os.path.exists(dst_dir):
         os.makedirs(dst_dir, exist_ok=True)
+    if not os.path.exists(outliers_dir): # Create outliers directory
+        os.makedirs(outliers_dir, exist_ok=True)
 
     temp_dir = os.path.join(src_dir, "_temp_metadata_editor")
-    if os.path.exists(temp_dir):
+    if os.path.exists(temp_dir): # Clean up temp dir from previous runs
         shutil.rmtree(temp_dir)
     os.makedirs(temp_dir, exist_ok=True)
     
-    files_to_process_info = []
-    skipped_files_log = []
+    files_to_process_info = [] # Stores dicts for files copied to temp
+    skipped_files_log = [] # For files skipped before ExifTool or errors during copy/move
     
     print("\nSTEP 1: Analyzing files and copying to temporary directory...")
+    supported_files_found_in_src = 0
+
     for filename in os.listdir(src_dir):
+        src_path = os.path.join(src_dir, filename)
+        
+        # Skip subdirectories in src_dir (including our own output/temp dirs if they are there)
+        if os.path.isdir(src_path):
+            if filename in ["_output_metadata_edited", "_output_outliers", "_temp_metadata_editor"]:
+                print(f"Skipping scan of script's own sub-directory: {filename}")
+            # else: print(f"Skipping other sub-directory: {filename}") # Optional
+            continue
+
         if not filename.lower().endswith(SUPPORTED_EXTENSIONS):
             continue
-        src_path = os.path.join(src_dir, filename)
-        if os.path.isdir(src_path):
-            continue
+        
+        supported_files_found_in_src += 1
         filename_stem = os.path.splitext(filename)[0]
         datetime_info = extract_datetime_from_filename(filename_stem, date_patterns)
+        
+        temp_path = os.path.join(temp_dir, filename) # Use original filename in temp_dir
+
         if datetime_info:
-            temp_path = os.path.join(temp_dir, filename)
             try:
                 shutil.copy2(src_path, temp_path)
                 files_to_process_info.append({'temp_path': temp_path, 'original_filename': filename, 'datetime_info': datetime_info})
-                print(f"Copied: {filename} (Matched: {datetime_info['matched_format']})")
+                print(f"Copied for processing: {filename} (Matched: {datetime_info['matched_format']})")
             except Exception as e:
                 print(f"Error copying {filename}: {e}")
                 skipped_files_log.append((filename, f"Copy error: {e}"))
         else:
-            skipped_files_log.append((filename, "No matching date pattern found in filename"))
+            # File does not match date pattern, but is a supported extension.
+            # Copy to temp_dir so it can be moved to outliers_dir later.
+            try:
+                shutil.copy2(src_path, temp_path)
+                files_to_process_info.append({'temp_path': temp_path, 'original_filename': filename, 'datetime_info': None})
+                print(f"Copied (no date match, for outlier processing): {filename}")
+                skipped_files_log.append((filename, "No matching date pattern (will be moved to outliers)"))
+            except Exception as e:
+                print(f"Error copying {filename} (for outlier processing): {e}")
+                skipped_files_log.append((filename, f"Copy error (for outlier processing): {e}"))
     
-    if not files_to_process_info:
-        print("\nNo files found matching any date patterns or supported extensions.")
-        if os.path.exists(temp_dir): shutil.rmtree(temp_dir)
+    if not files_to_process_info: # Check if any files were actually copied
+        print("\nNo files copied to temporary directory for processing.")
+        if os.path.exists(temp_dir) and not os.listdir(temp_dir): shutil.rmtree(temp_dir)
+        if os.path.exists(dst_dir) and not os.listdir(dst_dir): os.rmdir(dst_dir)
+        if os.path.exists(outliers_dir) and not os.listdir(outliers_dir): os.rmdir(outliers_dir)
         return
 
-    print(f"\nSTEP 2: Preparing ExifTool commands for {len(files_to_process_info)} files...")
+    print(f"\nSTEP 2: Preparing ExifTool commands...")
     exiftool_operations = []
+    files_for_exiftool_processing_count = 0
     for file_info in files_to_process_info:
-        dt_info = file_info['datetime_info']
-        date_value = f"{dt_info['year']}:{dt_info['month']}:{dt_info['day']} {dt_info['hour']}:{dt_info['minute']}:{dt_info['second']}"
-        
-        commands = [
-            f"-DateTimeOriginal={date_value}",
-            f"-CreateDate={date_value}",
-            f"-ModifyDate={date_value}",
-            "-overwrite_original"
-        ]
-        exiftool_operations.append((file_info['temp_path'], commands))
-
-    print("\nSTEP 3: Updating metadata using ExifTool...")
-    exiftool_updated_count = run_exiftool_batch(exiftool_operations) # Use the count from ExifTool
+        if file_info['datetime_info']: # Only prepare commands for files with datetime_info
+            dt_info = file_info['datetime_info']
+            date_value = f"{dt_info['year']}:{dt_info['month']}:{dt_info['day']} {dt_info['hour']}:{dt_info['minute']}:{dt_info['second']}"
+            
+            commands = [
+                f"-DateTimeOriginal={date_value}",
+                f"-CreateDate={date_value}",
+                f"-ModifyDate={date_value}",
+                "-overwrite_original" # Operates on the copy in temp_dir
+            ]
+            exiftool_operations.append((file_info['temp_path'], commands))
+            files_for_exiftool_processing_count +=1
     
-    print(f"\nSTEP 4: Moving processed files to destination...")
-    moved_count = 0
-    processed_original_filenames = [info['original_filename'] for info in files_to_process_info]
+    successfully_updated_temp_paths = set()
+    exiftool_reported_updated_count = 0
 
+    if files_for_exiftool_processing_count > 0:
+        print(f"Prepared ExifTool commands for {files_for_exiftool_processing_count} files.")
+        print("\nSTEP 3: Updating metadata using ExifTool...")
+        successfully_updated_temp_paths = run_exiftool_batch(exiftool_operations)
+        exiftool_reported_updated_count = len(successfully_updated_temp_paths)
+    else:
+        print("\nSTEP 3: No files with matched dates to update metadata for.")
+    
+    print(f"\nSTEP 4: Moving processed files...")
+    moved_to_output_count = 0
+    moved_to_outliers_count = 0
+    
     for entry in os.listdir(temp_dir): 
         temp_file_path = os.path.join(temp_dir, entry)
-        if os.path.isfile(temp_file_path) and entry in processed_original_filenames:
-            original_file_info = next((info for info in files_to_process_info if info['original_filename'] == entry), None)
-            if not original_file_info:
-                print(f"Warning: Could not find original info for {entry} in temp dir. Skipping move.")
-                skipped_files_log.append((entry, "Internal error: Missing info for temp file"))
-                continue
+        if not os.path.isfile(temp_file_path): 
+            continue
 
-            dt_info = original_file_info['datetime_info']
-            base_new_name = f"{dt_info['year']}{dt_info['month']}{dt_info['day']}"
-            _, ext = os.path.splitext(entry)
-            
-            new_name = f"{base_new_name}{ext}"
-            dst_path = os.path.join(dst_dir, new_name)
-            counter = 1
-            while os.path.exists(dst_path):
-                new_name = f"{base_new_name}_{counter}{ext}"
-                dst_path = os.path.join(dst_dir, new_name)
-                counter += 1
-            try:
-                shutil.move(temp_file_path, dst_path)
-                # Only increment moved_count if the file was actually reported as updated by ExifTool
-                # This logic might be complex if ExifTool updates some files in a batch but not others.
-                # For now, we assume if it's in temp_dir and was processed, it's eligible for move.
-                # The exiftool_updated_count is a more accurate reflection of metadata changes.
-                moved_count +=1 
-            except Exception as e:
-                print(f"Error moving {entry} to {dst_path}: {e}")
-                skipped_files_log.append((entry, f"Move error: {e}"))
-        elif entry not in processed_original_filenames and os.path.isfile(temp_file_path):
-             print(f"Warning: File {entry} found in temp_dir but was not in initial processing list. Skipping move.")
-             skipped_files_log.append((entry, "Unexpected file in temp folder"))
+        original_file_info = next((info for info in files_to_process_info if info['original_filename'] == entry), None)
 
-    if moved_count > 0 : # Only print if some files were moved
-        print(f"Moved {moved_count} files to {dst_dir}")
+        if original_file_info:
+            # Check if successfully updated AND had datetime_info for renaming
+            if original_file_info['temp_path'] in successfully_updated_temp_paths and original_file_info['datetime_info']:
+                dt_info = original_file_info['datetime_info']
+                base_new_name = f"{dt_info['year']}{dt_info['month']}{dt_info['day']}"
+                _, ext = os.path.splitext(entry)
+                
+                new_name = f"{base_new_name}{ext}"
+                dst_path_final = os.path.join(dst_dir, new_name)
+                counter = 1
+                while os.path.exists(dst_path_final):
+                    new_name = f"{base_new_name}_{counter}{ext}"
+                    dst_path_final = os.path.join(dst_dir, new_name)
+                    counter += 1
+                try:
+                    shutil.move(temp_file_path, dst_path_final)
+                    moved_to_output_count += 1
+                except Exception as e:
+                    print(f"Error moving {entry} to {dst_path_final}: {e}")
+                    skipped_files_log.append((entry, f"Move error to output: {e}"))
+            else:
+                # File is an outlier: not updated by ExifTool, or had no datetime_info initially.
+                outlier_dst_path = os.path.join(outliers_dir, entry) # Keep original name
+                try:
+                    if os.path.exists(outlier_dst_path): # Handle potential name collision in outliers
+                        base, ext = os.path.splitext(entry)
+                        copy_num = 1
+                        temp_outlier_name = f"{base}_copy{copy_num}{ext}"
+                        while os.path.exists(os.path.join(outliers_dir, temp_outlier_name)):
+                            copy_num += 1
+                            temp_outlier_name = f"{base}_copy{copy_num}{ext}"
+                        outlier_dst_path = os.path.join(outliers_dir, temp_outlier_name)
+                        print(f"Warning: Outlier file {entry} already exists. Saving as {os.path.basename(outlier_dst_path)}")
+                    
+                    shutil.move(temp_file_path, outlier_dst_path)
+                    moved_to_outliers_count += 1
+                    if original_file_info['datetime_info']: # Was intended for processing but failed/not updated
+                         skipped_files_log.append((entry, "Moved to outliers (ExifTool did not update or batch error)"))
+                    # If no datetime_info, it was already logged as "No matching date pattern"
+                except Exception as e:
+                    print(f"Error moving {entry} to {outlier_dst_path}: {e}")
+                    skipped_files_log.append((entry, f"Move error to outliers: {e}"))
+        else:
+             # File in temp_dir but not in files_to_process_info (should be rare)
+             print(f"Warning: File {entry} found in temp_dir but was not in 'files_to_process_info'. Moving to outliers.")
+             outlier_dst_path = os.path.join(outliers_dir, entry)
+             try:
+                if os.path.exists(outlier_dst_path):
+                    base, ext = os.path.splitext(entry)
+                    copy_num = 1
+                    temp_outlier_name = f"{base}_copy{copy_num}{ext}"
+                    while os.path.exists(os.path.join(outliers_dir, temp_outlier_name)):
+                        copy_num += 1
+                        temp_outlier_name = f"{base}_copy{copy_num}{ext}"
+                    outlier_dst_path = os.path.join(outliers_dir, temp_outlier_name)
+                shutil.move(temp_file_path, outlier_dst_path)
+                moved_to_outliers_count += 1
+                skipped_files_log.append((entry, "Moved to outliers (unexpected file in temp_dir)"))
+             except Exception as e:
+                print(f"Error moving unexpected file {entry} to {outlier_dst_path}: {e}")
+                skipped_files_log.append((entry, f"Move error for unexpected file: {e}"))
 
+    if moved_to_output_count > 0 :
+        print(f"Moved {moved_to_output_count} successfully processed files to {dst_dir}")
+    if moved_to_outliers_count > 0:
+        print(f"Moved {moved_to_outliers_count} outlier/unprocessed files to {outliers_dir}")
 
     print(f"\nSTEP 5: Cleaning up temporary directory: {temp_dir}")
     try:
-        shutil.rmtree(temp_dir)
-        print(f"Removed temporary directory: {temp_dir}")
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
+            print(f"Removed temporary directory: {temp_dir}")
+        else:
+            print(f"Temporary directory {temp_dir} already removed or was not created.")
     except OSError as e:
         print(f"Warning: Could not remove temporary directory {temp_dir}: {e}")
     
     print("\n--- Processing Summary ---")
-    print(f"Files initially copied for processing: {len(files_to_process_info)}")
-    print(f"Files reported as updated by ExifTool: {exiftool_updated_count}") # Use the count from ExifTool
-    print(f"Files successfully moved to output: {moved_count}")
+    print(f"Supported files found in source: {supported_files_found_in_src}")
+    print(f"Files copied to temp for processing: {len(files_to_process_info)}")
+    print(f"Files for which ExifTool processing was attempted: {files_for_exiftool_processing_count}")
+    print(f"Files reported as updated by ExifTool: {exiftool_reported_updated_count}")
+    print(f"Files successfully moved to output ({os.path.basename(dst_dir)}): {moved_to_output_count}")
+    print(f"Files moved to outliers ({os.path.basename(outliers_dir)}): {moved_to_outliers_count}")
+    
     if skipped_files_log:
-        print(f"Files skipped or with errors during processing: {len(skipped_files_log)}")
+        print(f"\nLog of files with notes/errors ({len(skipped_files_log)}):")
+        # To make log cleaner, group reasons by filename if multiple entries exist (rare)
+        # For now, direct print is fine.
         for filename, reason in skipped_files_log:
             print(f"  - {filename}: {reason}")
             
