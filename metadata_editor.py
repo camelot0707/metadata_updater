@@ -1,148 +1,415 @@
-
 import os
 import re
 import shutil
 import subprocess
 import tempfile
+import json
+from datetime import datetime, timedelta
 
-if shutil.which("exiftool") is None:
-    exit("Error: ExifTool not found. Please copy the .exe found at https://exiftool.org/ into the same directory as this script.")
-else:
-    print("ExifTool found, proceeding...")
+# --- Configuration ---
+EXIFTOOL_EXECUTABLE = None
+DATE_FORMATS_FILE_PATHS = [
+    os.path.join("Insights", "date_formats_source.json"), # Primary location
+    "date_formats_source.json" # Fallback location
+]
+SUPPORTED_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.heic', '.heif', '.tiff', '.tif', '.mp4', '.mov', '.arw', '.cr2', '.nef', '.orf', '.raf', '.rw2', '.srw')
+DEFAULT_TIME_IF_ONLY_DATE_FOUND = "12:00:00"
 
-def run_exiftool(files, commands):
-    """Run exiftool commands on a batch of files using a temp file list"""
-    if not files:
-        return
-        
-    # Create a temporary file listing all files to process
-    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
-        f.write('\n'.join(files))
-        temp_filename = f.name
-    
-    # Run exiftool with the file list
+# --- ExifTool Check ---
+def find_exiftool():
+    """Finds ExifTool executable."""
+    global EXIFTOOL_EXECUTABLE
+    # 1. Check script's directory for exiftool.exe (Windows) or exiftool (other)
     try:
-        cmd = ['exiftool', '-@', temp_filename] + commands
-        subprocess.run(cmd, check=True)
-        print(f"Updated metadata for {len(files)} files")
-    except subprocess.CalledProcessError as e:
-        print(f"Error running ExifTool: {e}")
-    finally:
-        # Clean up temp file
-        if os.path.exists(temp_filename):
-            os.unlink(temp_filename)
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        local_exiftool_name = "exiftool.exe" if os.name == 'nt' else "exiftool"
+        local_path = os.path.join(script_dir, local_exiftool_name)
+        if os.path.isfile(local_path) and os.access(local_path, os.X_OK):
+            EXIFTOOL_EXECUTABLE = local_path
+            return
+    except NameError: # __file__ might not be defined (e.g. interactive)
+        pass
 
-def main():
-    # Get source and destination folders
-    src_dir = input("Enter source folder PATH: ").strip()
-    #dst_dir = input("Enter destination folder PATH: ").strip()
+    # 2. Check system PATH
+    path_from_which = shutil.which("exiftool")
+    if path_from_which:
+        EXIFTOOL_EXECUTABLE = path_from_which
+        return
+
+    EXIFTOOL_EXECUTABLE = None
+
+find_exiftool()
+if EXIFTOOL_EXECUTABLE is None:
+    exit("Error: ExifTool not found. Please ensure it's in your system PATH or in the script's directory. Download from https://exiftool.org/")
+else:
+    print(f"ExifTool found at: {EXIFTOOL_EXECUTABLE}, proceeding...")
+
+
+# --- Date Format Parsing Logic ---
+DATE_COMPONENT_REGEX_MAP = {
+    # Order matters for tokens that are substrings of others (e.g., YYYY before YY)
+    "YYYY": r"(?P<year>\d{4})",
+    "YY": r"(?P<shortyear>\d{2})",
+    "MM": r"(?P<month>\d{2})", # Expects 2 digits
+    "M": r"(?P<month>\d{1,2})", # Allows 1 or 2 digits
+    "DDD": r"(?P<dayofyear>\d{3})", # For 3-digit day of year
+    "DD": r"(?P<day>\d{2})",   # Expects 2 digits
+    "D": r"(?P<day>\d{1,2})",  # Allows 1 or 2 digits
+    "HH": r"(?P<hour>\d{2})",  # 24-hour
+    "hh": r"(?P<hour12>\d{2})", # 12-hour
+    "mm": r"(?P<minute>\d{2})", # lowercase 'mm' for minutes
+    "SS": r"(?P<second>\d{2})", # uppercase 'SS' for seconds
+    "fff": r"(?P<millisecond>\d{3})",
+    "AMPM": r"(?P<ampm>[APap][Mm])", # Case insensitive AM/PM
+    "Z": r"(?P<zulu>Z)",
+    # More complex offsets might need specific format_strings in JSON or more robust regex here
+    # For simplicity, this example handles basic Z and assumes JSON might specify full offset patterns
+}
+# Sort keys by length descending to match longer tokens first (e.g., "YYYY" before "YY")
+SORTED_DATE_TOKENS = sorted(DATE_COMPONENT_REGEX_MAP.keys(), key=len, reverse=True)
+
+def compile_pattern_from_format_string(format_entry):
+    """
+    Converts a format_string from JSON into a compiled regex pattern.
+    Example format_string: "YYYY-MM-DD_HHMMSS"
+    """
+    format_str = format_entry.get("format_string", "")
+    regex_str_parts = []
+    i = 0
+    while i < len(format_str):
+        matched_token = False
+        for token in SORTED_DATE_TOKENS:
+            if format_str.startswith(token, i):
+                regex_str_parts.append(DATE_COMPONENT_REGEX_MAP[token])
+                i += len(token)
+                matched_token = True
+                break
+        if not matched_token:
+            # Character is not a known token, treat as literal
+            char = format_str[i]
+            regex_str_parts.append(re.escape(char))
+            i += 1
     
-    # Create destination directory if it doesn't exist
-    dst_dir = os.path.join(src_dir, "_output")
+    final_regex_str = "".join(regex_str_parts)
+    # We want to find this pattern anywhere in the filename stem
+    # Add word boundaries or common delimiters if needed, or make it more flexible
+    # For now, let's assume the pattern describes a significant, contiguous part of the name
+    try:
+        return re.compile(final_regex_str, re.IGNORECASE)
+    except re.error as e:
+        print(f"Warning: Could not compile regex for format '{format_str}': {e}")
+        return None
+
+def load_date_patterns():
+    """Loads date format patterns from the JSON file."""
+    patterns = []
+    loaded_path = None
+    for file_path in DATE_FORMATS_FILE_PATHS:
+        try:
+            # Try to construct path relative to script if not absolute
+            if not os.path.isabs(file_path):
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                abs_file_path = os.path.join(script_dir, file_path)
+            else:
+                abs_file_path = file_path
+
+            if os.path.exists(abs_file_path):
+                with open(abs_file_path, 'r', encoding='utf-8') as f:
+                    format_entries = json.load(f)
+                loaded_path = abs_file_path
+                break # Found and loaded a file
+        except FileNotFoundError:
+            continue
+        except json.JSONDecodeError as e:
+            print(f"Error decoding JSON from {abs_file_path}: {e}")
+            return [] # Critical error, return empty
+        except Exception as e:
+            print(f"Error loading date formats from {abs_file_path}: {e}")
+            return []
+
+    if not loaded_path:
+        print(f"Warning: Date formats JSON file not found at expected locations: {DATE_FORMATS_FILE_PATHS}")
+        return []
+
+    print(f"Loading date patterns from: {loaded_path}")
+    for entry in format_entries:
+        compiled_regex = compile_pattern_from_format_string(entry)
+        if compiled_regex:
+            patterns.append({
+                "regex": compiled_regex,
+                "original_format": entry.get("format_string", "N/A"),
+                "type": entry.get("type", "N/A")
+            })
+    print(f"Loaded {len(patterns)} date patterns.")
+    return patterns
+
+def extract_datetime_from_filename(filename_stem, date_patterns):
+    """
+    Attempts to extract date and time components from a filename stem
+    using the loaded date patterns.
+    Returns a dictionary with 'year', 'month', 'day', 'hour', 'minute', 'second'
+    or None if no pattern matches.
+    """
+    for pattern_info in date_patterns:
+        match = pattern_info["regex"].search(filename_stem)
+        if match:
+            data = match.groupdict()
+            
+            # Normalize data
+            year = data.get('year')
+            if not year and data.get('shortyear'):
+                # Convert YY to YYYY (e.g., 25 -> 2025, 98 -> 1998)
+                # This simple heuristic might need adjustment for very old dates
+                short_year_int = int(data['shortyear'])
+                year = str(2000 + short_year_int if short_year_int < 70 else 1900 + short_year_int) # Common heuristic
+            
+            month = data.get('month')
+            day = data.get('day')
+            dayofyear = data.get('dayofyear')
+
+            hour = data.get('hour')
+            minute = data.get('minute', "00") # Default if not present
+            second = data.get('second', "00") # Default if not present
+            millisecond = data.get('millisecond') # Optional
+
+            if data.get('hour12') and data.get('ampm'):
+                hour12_int = int(data['hour12'])
+                ampm = data['ampm'].lower()
+                if ampm == 'pm' and hour12_int != 12:
+                    hour = str(hour12_int + 12)
+                elif ampm == 'am' and hour12_int == 12: # Midnight case
+                    hour = "00"
+                else:
+                    hour = data['hour12'].zfill(2)
+            
+            if not hour: # If no hour info at all
+                hour, minute, second = DEFAULT_TIME_IF_ONLY_DATE_FOUND.split(':')
+
+            # Basic validation
+            if year and month and day:
+                try:
+                    # Further validate by trying to create a datetime object
+                    dt_val = datetime(int(year), int(month), int(day), int(hour), int(minute), int(second))
+                    return {
+                        'year': year.zfill(4), 'month': month.zfill(2), 'day': day.zfill(2),
+                        'hour': hour.zfill(2), 'minute': minute.zfill(2), 'second': second.zfill(2),
+                        'millisecond': millisecond, # Can be None
+                        'zulu': data.get('zulu'), # Can be None
+                        'offset_sign': data.get('offset_sign'), # Can be None
+                        'offset_hh': data.get('offset_hh'), # Can be None
+                        'offset_mm': data.get('offset_mm'), # Can be None
+                        'matched_format': pattern_info["original_format"]
+                    }
+                except ValueError:
+                    # print(f"Debug: Invalid date components for {filename_stem} with {pattern_info['original_format']}: Y={year} M={month} D={day}")
+                    continue # Invalid date components, try next pattern
+    return None
+
+# --- ExifTool Runner (ENHANCED DIAGNOSTIC VERSION) ---
+def run_exiftool_batch(files_to_update_with_commands):
+    """
+    Run exiftool commands on batches of files.
+    files_to_update_with_commands is a list of tuples: (filepath, list_of_exiftool_args)
+    This function tries to batch files that have the *exact same* set of commands.
+    """
+    if not files_to_update_with_commands:
+        return 0
+
+    # Group files by their command list (as a tuple to be hashable)
+    command_groups = {}
+    for filepath, commands in files_to_update_with_commands:
+        command_tuple = tuple(commands)
+        if command_tuple not in command_groups:
+            command_groups[command_tuple] = []
+        command_groups[command_tuple].append(filepath)
+
+    total_files_reported_updated_by_exiftool = 0
+    processed_batch_count = 0
+
+    for commands_tuple, filepaths in command_groups.items():
+        processed_batch_count += 1
+        if not filepaths:
+            continue
+        
+        temp_filename = None
+        print(f"\n--- Processing Batch {processed_batch_count} ---")
+        print(f"Commands: {commands_tuple}")
+        print(f"Files in this batch ({len(filepaths)}): {filepaths[:3]}..." if len(filepaths) > 3 else filepaths)
+
+        try:
+            with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt', encoding='utf-8') as f:
+                f.write('\n'.join(filepaths))
+                temp_filename = f.name
+            
+            # Added -S for short summary output from ExifTool
+            cmd = [EXIFTOOL_EXECUTABLE, '-S', '-@', temp_filename] + list(commands_tuple)
+            
+            print(f"Running ExifTool command: {' '.join(cmd)}")
+            process = subprocess.run(cmd, capture_output=True, text=True, check=False, encoding='utf-8')
+            
+            print(f"  ExifTool Return Code: {process.returncode}")
+            # Always print stdout and stderr for diagnosis
+            print(f"  ExifTool STDOUT:\n{process.stdout.strip()}")
+            if process.stderr.strip():
+                print(f"  ExifTool STDERR:\n{process.stderr.strip()}")
+
+            # Try to parse ExifTool's output for the number of files actually updated
+            if process.returncode == 0: # Only parse if ExifTool itself didn't report a fatal error for the batch
+                updated_in_this_batch = 0
+                stdout_lower = process.stdout.lower()
+                # Regex to find "X <type> files updated"
+                match = re.search(r"(\d+)\s+(image|video|media|file)s?\s+updated", stdout_lower)
+                if match:
+                    updated_in_this_batch = int(match.group(1))
+                    total_files_reported_updated_by_exiftool += updated_in_this_batch
+                    print(f"  ExifTool reported {updated_in_this_batch} file(s) updated in this batch.")
+                elif "0 image files updated" in stdout_lower or \
+                     "0 files updated" in stdout_lower or \
+                     "files unchanged" in stdout_lower or \
+                     (not stdout_lower.strip() and len(filepaths) > 0) : # If stdout is empty but files were processed
+                    print(f"  ExifTool reported 0 files updated or files unchanged in this batch (Return Code 0).")
+                else:
+                    # If return code is 0, but no clear "updated" or "0 updated" message, it's ambiguous.
+                    print(f"  ExifTool return code 0, but specific 'updated' count not parsed from STDOUT. Assuming 0 for this batch based on output.")
+            else:
+                print(f"  Warning: ExifTool returned error code {process.returncode} for this batch.")
+
+        except Exception as e:
+            print(f"  An unexpected error occurred during ExifTool batch processing: {e}")
+        finally:
+            if temp_filename and os.path.exists(temp_filename):
+                try:
+                    os.unlink(temp_filename)
+                except Exception as e_unlink:
+                    print(f"  Warning: Could not delete temp file {temp_filename}: {e_unlink}")
+        print("--- End Batch ---")
+    
+    return total_files_reported_updated_by_exiftool
+
+# --- Main ---
+def main():
+    date_patterns = load_date_patterns()
+    if not date_patterns:
+        print("No date patterns loaded. Cannot proceed with filename parsing.")
+
+    src_dir = input("Enter source folder PATH: ").strip()
+    if not os.path.isdir(src_dir):
+        print(f"Error: Source folder not found at '{src_dir}'")
+        return
+
+    dst_dir = os.path.join(src_dir, "_output_metadata_edited")
     if not os.path.exists(dst_dir):
         os.makedirs(dst_dir, exist_ok=True)
 
-    # Create temporary directory for processing
-    temp_dir = os.path.join(src_dir, "_temp")
+    temp_dir = os.path.join(src_dir, "_temp_metadata_editor")
+    if os.path.exists(temp_dir):
+        shutil.rmtree(temp_dir)
     os.makedirs(temp_dir, exist_ok=True)
     
-    # Lists to track files
-    process_files = []  # Files in temp dir that need metadata updates
-    skipped_files = []  # Files that didn't match the pattern
+    files_to_process_info = []
+    skipped_files_log = []
     
-    print("\nSTEP 1: Copying files to temporary directory...")
-    
-    # Copy files to temp dir with original names
+    print("\nSTEP 1: Analyzing files and copying to temporary directory...")
     for filename in os.listdir(src_dir):
-        # Look for files matching pattern IMG-YYYYMMDD-WA####.jpg
-        match = re.match(r"IMG-(\d{8})-WA\d+\.jpe?g", filename, re.IGNORECASE)
-        
-        if match:
-            src_path = os.path.join(src_dir, filename)
+        if not filename.lower().endswith(SUPPORTED_EXTENSIONS):
+            continue
+        src_path = os.path.join(src_dir, filename)
+        if os.path.isdir(src_path):
+            continue
+        filename_stem = os.path.splitext(filename)[0]
+        datetime_info = extract_datetime_from_filename(filename_stem, date_patterns)
+        if datetime_info:
             temp_path = os.path.join(temp_dir, filename)
-            
-            # Copy file to temp dir
-            shutil.copy2(src_path, temp_path)
-            process_files.append(temp_path)
-            print(f"Copied: {filename}")
+            try:
+                shutil.copy2(src_path, temp_path)
+                files_to_process_info.append({'temp_path': temp_path, 'original_filename': filename, 'datetime_info': datetime_info})
+                print(f"Copied: {filename} (Matched: {datetime_info['matched_format']})")
+            except Exception as e:
+                print(f"Error copying {filename}: {e}")
+                skipped_files_log.append((filename, f"Copy error: {e}"))
         else:
-            skipped_files.append(filename)
-            print(f"Skipped: {filename} (doesn't match pattern)")
+            skipped_files_log.append((filename, "No matching date pattern found in filename"))
     
-    print(f"\nSTEP 2: Updating metadata for {len(process_files)} files...")
-    
-    # Process metadata for all copied files in batches based on date
-    # Group files by date for batch processing
-    date_groups = {}
-    for temp_path in process_files:
-        filename = os.path.basename(temp_path)
-        match = re.match(r"IMG-(\d{8})-WA\d+\.jpe?g", filename, re.IGNORECASE)
-        if match:
-            date_part = match.group(1)
-            if date_part not in date_groups:
-                date_groups[date_part] = []
-            date_groups[date_part].append(temp_path)
-    
-    # Process each date group with a single ExifTool command
-    for date_part, files in date_groups.items():
-        year = date_part[:4]
-        month = date_part[4:6]
-        day = date_part[6:8]
+    if not files_to_process_info:
+        print("\nNo files found matching any date patterns or supported extensions.")
+        if os.path.exists(temp_dir): shutil.rmtree(temp_dir)
+        return
+
+    print(f"\nSTEP 2: Preparing ExifTool commands for {len(files_to_process_info)} files...")
+    exiftool_operations = []
+    for file_info in files_to_process_info:
+        dt_info = file_info['datetime_info']
+        date_value = f"{dt_info['year']}:{dt_info['month']}:{dt_info['day']} {dt_info['hour']}:{dt_info['minute']}:{dt_info['second']}"
         
-        # Format date for metadata
-        date_value = f"{year}:{month}:{day} 20:00:00"
-        
-        print(f"Updating metadata for date: {date_part} ({len(files)} files)")
-        
-        # Update metadata for all files with this date
         commands = [
             f"-DateTimeOriginal={date_value}",
             f"-CreateDate={date_value}",
             f"-ModifyDate={date_value}",
             "-overwrite_original"
         ]
-        
-        run_exiftool(files, commands)
+        # Add more sophisticated timezone/millisecond handling here if needed
+        exiftool_operations.append((file_info['temp_path'], commands))
+
+    print("\nSTEP 3: Updating metadata using ExifTool...")
+    exiftool_updated_count = run_exiftool_batch(exiftool_operations) # Use the count from ExifTool
     
-    print("\nSTEP 3: Renaming and moving files to destination...")
-    
-    # Rename and move files to final destination
-    for temp_path in process_files:
-        filename = os.path.basename(temp_path)
-        match = re.match(r"IMG-(\d{8})-WA\d+\.jpe?g", filename, re.IGNORECASE)
-        
-        if match:
-            date_part = match.group(1)
+    print(f"\nSTEP 4: Moving processed files to destination...")
+    moved_count = 0
+    processed_original_filenames = [info['original_filename'] for info in files_to_process_info]
+
+    for entry in os.listdir(temp_dir): 
+        temp_file_path = os.path.join(temp_dir, entry)
+        if os.path.isfile(temp_file_path) and entry in processed_original_filenames:
+            original_file_info = next((info for info in files_to_process_info if info['original_filename'] == entry), None)
+            if not original_file_info:
+                print(f"Warning: Could not find original info for {entry} in temp dir. Skipping move.")
+                skipped_files_log.append((entry, "Internal error: Missing info for temp file"))
+                continue
+
+            dt_info = original_file_info['datetime_info']
+            base_new_name = f"{dt_info['year']}{dt_info['month']}{dt_info['day']}"
+            _, ext = os.path.splitext(entry)
             
-            # Create new filename: YYYYMMDD.jpg
-            ## new_name = f"{date_part}.jpg"
-            ## dst_path = os.path.join(dst_dir, new_name)
-            
-            # Handle duplicate filenames
+            new_name = f"{base_new_name}{ext}"
+            dst_path = os.path.join(dst_dir, new_name)
             counter = 1
             while os.path.exists(dst_path):
-                new_name = f"{date_part}_{counter}.jpg"
+                new_name = f"{base_new_name}_{counter}{ext}"
                 dst_path = os.path.join(dst_dir, new_name)
                 counter += 1
-            
-            # Move and rename the file
-            shutil.move(temp_path, dst_path)
-            #print(f"Renamed and moved: {filename} → {new_name}")
-            print(f"Moved {filename}")
-            
-    
-    # Clean up temp directory
+            try:
+                shutil.move(temp_file_path, dst_path)
+                # Only increment moved_count if the file was actually reported as updated by ExifTool
+                # This logic might be complex if ExifTool updates some files in a batch but not others.
+                # For now, we assume if it's in temp_dir and was processed, it's eligible for move.
+                # The exiftool_updated_count is a more accurate reflection of metadata changes.
+                moved_count +=1 
+            except Exception as e:
+                print(f"Error moving {entry} to {dst_path}: {e}")
+                skipped_files_log.append((entry, f"Move error: {e}"))
+        elif entry not in processed_original_filenames and os.path.isfile(temp_file_path):
+             print(f"Warning: File {entry} found in temp_dir but was not in initial processing list. Skipping move.")
+             skipped_files_log.append((entry, "Unexpected file in temp folder"))
+
+    if moved_count > 0 : # Only print if some files were moved
+        print(f"Moved {moved_count} files to {dst_dir}")
+
+
+    print(f"\nSTEP 5: Cleaning up temporary directory: {temp_dir}")
     try:
-        os.rmdir(temp_dir)
+        shutil.rmtree(temp_dir)
         print(f"Removed temporary directory: {temp_dir}")
-    except OSError:
-        print(f"Note: Temporary directory not empty, skipping removal: {temp_dir}")
+    except OSError as e:
+        print(f"Warning: Could not remove temporary directory {temp_dir}: {e}")
     
-    # Show summary
-    print(f"\nSummary: {len(process_files)} files processed, {len(skipped_files)} files skipped")
-    # List skipped files at the end for review
-    for filename in skipped_files:
-        print(f"  Skipped: {filename} (doesn't match pattern)")
+    print("\n--- Processing Summary ---")
+    print(f"Files initially copied for processing: {len(files_to_process_info)}")
+    print(f"Files reported as updated by ExifTool: {exiftool_updated_count}") # Use the count from ExifTool
+    print(f"Files successfully moved to output: {moved_count}")
+    if skipped_files_log:
+        print(f"Files skipped or with errors during processing: {len(skipped_files_log)}")
+        for filename, reason in skipped_files_log:
+            print(f"  - {filename}: {reason}")
             
 if __name__ == "__main__":
     main()
