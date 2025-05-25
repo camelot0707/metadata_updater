@@ -284,7 +284,9 @@ def run_exiftool_batch(files_to_update_with_commands):
             if process.returncode == 0:
                 updated_in_this_batch = 0
                 stdout_lower = process.stdout.lower()
-                match = re.search(r"(\d+)\s+(image|video|media|file)s?\s+updated", stdout_lower)
+                # Updated regex to be more robust for "N type files updated" or "N files updated"
+                match = re.search(r"(\d+)\s+(?:(?:image|video|media|file)(?:s)?(?:\s+file(?:s)?)?|files?)\s+updated", stdout_lower)
+
                 if match:
                     updated_in_this_batch = int(match.group(1))
                     total_files_reported_updated_by_exiftool += updated_in_this_batch
@@ -292,10 +294,11 @@ def run_exiftool_batch(files_to_update_with_commands):
                 elif "0 image files updated" in stdout_lower or \
                      "0 files updated" in stdout_lower or \
                      "files unchanged" in stdout_lower or \
-                     (not stdout_lower.strip() and len(filepaths) > 0):
+                     (not stdout_lower.strip() and len(filepaths) > 0): # Check for empty output if files were processed
                     print(f"  ExifTool reported 0 files updated or files unchanged in this batch (Return Code 0).")
                 else:
-                    print(f"  ExifTool return code 0, but specific 'updated' count not parsed from STDOUT. Assuming 0 for this batch based on output.")
+                    # This case means return code was 0, but output didn't match known success patterns.
+                    print(f"  ExifTool return code 0, but specific 'updated' count not clearly parsed from STDOUT. Assuming 0 for this batch. STDOUT: '{stdout_lower.strip()}'")
             else:
                 # Check for specific Perl DLL error
                 if "perl5" in process.stderr and ".dll" in process.stderr:
