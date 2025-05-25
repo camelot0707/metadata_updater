@@ -7,43 +7,60 @@ import json
 from datetime import datetime, timedelta
 
 # --- Configuration ---
-EXIFTOOL_EXECUTABLE = None
+EXIFTOOL_EXECUTABLE = None # Will store the full path to exiftool.exe
 DATE_FORMATS_FILE_PATHS = [
     os.path.join("Insights", "date_formats_source.json"), # Primary location
     "date_formats_source.json" # Fallback location
 ]
 SUPPORTED_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.heic', '.heif', '.tiff', '.tif', '.mp4', '.mov', '.arw', '.cr2', '.nef', '.orf', '.raf', '.rw2', '.srw')
-DEFAULT_TIME_IF_ONLY_DATE_FOUND = "12:00:00"
+DEFAULT_TIME_IF_ONLY_DATE_FOUND = "20:00:00"
 
 # --- ExifTool Check ---
-def find_exiftool():
-    """Finds ExifTool executable."""
+def find_and_set_exiftool_path():
+    """
+    Finds ExifTool executable and sets the global EXIFTOOL_EXECUTABLE path.
+    Search order:
+    1. Script's directory.
+    2. Recursively in subfolders of the script's parent directory.
+    3. System PATH.
+    Exits script if not found.
+    """
     global EXIFTOOL_EXECUTABLE
-    # 1. Check script's directory for exiftool.exe (Windows) or exiftool (other)
-    try:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        local_exiftool_name = "exiftool.exe" if os.name == 'nt' else "exiftool"
-        local_path = os.path.join(script_dir, local_exiftool_name)
-        if os.path.isfile(local_path) and os.access(local_path, os.X_OK):
-            EXIFTOOL_EXECUTABLE = local_path
-            return
-    except NameError: # __file__ might not be defined (e.g. interactive)
-        pass
+    script_path = os.path.abspath(__file__)
+    script_dir = os.path.dirname(script_path)
+    exiftool_name = "exiftool.exe" if os.name == 'nt' else "exiftool"
 
-    # 2. Check system PATH
-    path_from_which = shutil.which("exiftool")
-    if path_from_which:
-        EXIFTOOL_EXECUTABLE = path_from_which
+    # 1. Check script's directory
+    local_path_script_dir = os.path.join(script_dir, exiftool_name)
+    if os.path.isfile(local_path_script_dir) and os.access(local_path_script_dir, os.X_OK):
+        EXIFTOOL_EXECUTABLE = local_path_script_dir
+        print(f"ExifTool found in script directory: {EXIFTOOL_EXECUTABLE}")
         return
 
-    EXIFTOOL_EXECUTABLE = None
+    # 2. Check subfolders of the script's parent directory
+    parent_dir = os.path.dirname(script_dir)
+    print(f"Searching for {exiftool_name} in subfolders of: {parent_dir}...")
+    for root, _, files in os.walk(parent_dir):
+        if exiftool_name in files:
+            found_path = os.path.join(root, exiftool_name)
+            if os.access(found_path, os.X_OK):
+                EXIFTOOL_EXECUTABLE = found_path
+                print(f"ExifTool found in subfolder: {EXIFTOOL_EXECUTABLE}")
+                return
 
-find_exiftool()
-if EXIFTOOL_EXECUTABLE is None:
-    exit("Error: ExifTool not found. Please ensure it's in your system PATH or in the script's directory. Download from https://exiftool.org/")
-else:
-    print(f"ExifTool found at: {EXIFTOOL_EXECUTABLE}, proceeding...")
+    # 3. Check system PATH
+    path_from_which = shutil.which(exiftool_name)
+    if path_from_which:
+        EXIFTOOL_EXECUTABLE = path_from_which
+        print(f"ExifTool found in system PATH: {EXIFTOOL_EXECUTABLE}")
+        return
 
+    print(f"Error: {exiftool_name} not found.")
+    print("Please ensure exiftool.exe is in the script's directory, a subfolder of the project, or in your system PATH.")
+    print("You can download it from https://exiftool.org/")
+    exit(1)
+
+find_and_set_exiftool_path() # Call the function to set the path
 
 # --- Date Format Parsing Logic ---
 DATE_COMPONENT_REGEX_MAP = {
@@ -55,17 +72,20 @@ DATE_COMPONENT_REGEX_MAP = {
     "DDD": r"(?P<dayofyear>\d{3})", # For 3-digit day of year
     "DD": r"(?P<day>\d{2})",   # Expects 2 digits
     "D": r"(?P<day>\d{1,2})",  # Allows 1 or 2 digits
-    "HH": r"(?P<hour>\d{2})",  # 24-hour
-    "hh": r"(?P<hour12>\d{2})", # 12-hour
-    "mm": r"(?P<minute>\d{2})", # lowercase 'mm' for minutes
-    "SS": r"(?P<second>\d{2})", # uppercase 'SS' for seconds
+    "HH": r"(?P<hour>\d{2})",  # 24-hour for main time
+    "hh": r"(?P<hour12>\d{2})", # 12-hour for main time (used with AMPM)
+    "mm": r"(?P<minute>\d{2})", # lowercase 'mm' for main time minutes
+    "SS": r"(?P<second>\d{2})", # uppercase 'SS' for main time seconds
     "fff": r"(?P<millisecond>\d{3})",
     "AMPM": r"(?P<ampm>[APap][Mm])", # Case insensitive AM/PM
     "Z": r"(?P<zulu>Z)",
-    # More complex offsets might need specific format_strings in JSON or more robust regex here
-    # For simplicity, this example handles basic Z and assumes JSON might specify full offset patterns
+    # New tokens for Timezone Offsets
+    "TZ_SIGN": r"(?P<offset_sign>[+-])",    # Token for + or -
+    "TZ_HH": r"(?P<offset_hh>\d{2})",        # Token for timezone offset hours
+    "TZ_MM": r"(?P<offset_mm>\d{2})",        # Token for timezone offset minutes
 }
-# Sort keys by length descending to match longer tokens first (e.g., "YYYY" before "YY")
+# Sort keys by length descending to match longer tokens first
+# This will be automatically recalculated based on the updated DATE_COMPONENT_REGEX_MAP
 SORTED_DATE_TOKENS = sorted(DATE_COMPONENT_REGEX_MAP.keys(), key=len, reverse=True)
 
 def compile_pattern_from_format_string(format_entry):
@@ -89,7 +109,6 @@ def compile_pattern_from_format_string(format_entry):
             char = format_str[i]
             regex_str_parts.append(re.escape(char))
             i += 1
-    
     final_regex_str = "".join(regex_str_parts)
     # We want to find this pattern anywhere in the filename stem
     # Add word boundaries or common delimiters if needed, or make it more flexible
@@ -214,6 +233,9 @@ def run_exiftool_batch(files_to_update_with_commands):
     """
     if not files_to_update_with_commands:
         return 0
+    if EXIFTOOL_EXECUTABLE is None:
+        print("Critical Error: EXIFTOOL_EXECUTABLE path not set before running batch.")
+        return 0 # Or raise an exception
 
     # Group files by their command list (as a tuple to be hashable)
     command_groups = {}
@@ -225,6 +247,7 @@ def run_exiftool_batch(files_to_update_with_commands):
 
     total_files_reported_updated_by_exiftool = 0
     processed_batch_count = 0
+    exiftool_dir = os.path.dirname(EXIFTOOL_EXECUTABLE) # Get ExifTool's directory
 
     for commands_tuple, filepaths in command_groups.items():
         processed_batch_count += 1
@@ -241,23 +264,26 @@ def run_exiftool_batch(files_to_update_with_commands):
                 f.write('\n'.join(filepaths))
                 temp_filename = f.name
             
-            # Added -S for short summary output from ExifTool
             cmd = [EXIFTOOL_EXECUTABLE, '-S', '-@', temp_filename] + list(commands_tuple)
             
             print(f"Running ExifTool command: {' '.join(cmd)}")
-            process = subprocess.run(cmd, capture_output=True, text=True, check=False, encoding='utf-8')
+            process = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+                encoding='utf-8',
+                cwd=exiftool_dir # Set current working directory for ExifTool
+            )
             
             print(f"  ExifTool Return Code: {process.returncode}")
-            # Always print stdout and stderr for diagnosis
             print(f"  ExifTool STDOUT:\n{process.stdout.strip()}")
             if process.stderr.strip():
                 print(f"  ExifTool STDERR:\n{process.stderr.strip()}")
 
-            # Try to parse ExifTool's output for the number of files actually updated
-            if process.returncode == 0: # Only parse if ExifTool itself didn't report a fatal error for the batch
+            if process.returncode == 0:
                 updated_in_this_batch = 0
                 stdout_lower = process.stdout.lower()
-                # Regex to find "X <type> files updated"
                 match = re.search(r"(\d+)\s+(image|video|media|file)s?\s+updated", stdout_lower)
                 if match:
                     updated_in_this_batch = int(match.group(1))
@@ -266,13 +292,17 @@ def run_exiftool_batch(files_to_update_with_commands):
                 elif "0 image files updated" in stdout_lower or \
                      "0 files updated" in stdout_lower or \
                      "files unchanged" in stdout_lower or \
-                     (not stdout_lower.strip() and len(filepaths) > 0) : # If stdout is empty but files were processed
+                     (not stdout_lower.strip() and len(filepaths) > 0):
                     print(f"  ExifTool reported 0 files updated or files unchanged in this batch (Return Code 0).")
                 else:
-                    # If return code is 0, but no clear "updated" or "0 updated" message, it's ambiguous.
                     print(f"  ExifTool return code 0, but specific 'updated' count not parsed from STDOUT. Assuming 0 for this batch based on output.")
             else:
-                print(f"  Warning: ExifTool returned error code {process.returncode} for this batch.")
+                # Check for specific Perl DLL error
+                if "perl5" in process.stderr and ".dll" in process.stderr:
+                     print(f"  Warning: ExifTool returned error code {process.returncode}. Potential Perl DLL issue: {process.stderr.strip().splitlines()[0]}")
+                else:
+                    print(f"  Warning: ExifTool returned error code {process.returncode} for this batch.")
+
 
         except Exception as e:
             print(f"  An unexpected error occurred during ExifTool batch processing: {e}")
@@ -288,6 +318,14 @@ def run_exiftool_batch(files_to_update_with_commands):
 
 # --- Main ---
 def main():
+    # find_and_set_exiftool_path() is called globally already
+    if EXIFTOOL_EXECUTABLE:
+        print(f"Using ExifTool at: {EXIFTOOL_EXECUTABLE}")
+    else:
+        # This case should be handled by exit() in find_and_set_exiftool_path()
+        print("Critical: ExifTool path not set. Exiting.") 
+        return
+
     date_patterns = load_date_patterns()
     if not date_patterns:
         print("No date patterns loaded. Cannot proceed with filename parsing.")
@@ -347,7 +385,6 @@ def main():
             f"-ModifyDate={date_value}",
             "-overwrite_original"
         ]
-        # Add more sophisticated timezone/millisecond handling here if needed
         exiftool_operations.append((file_info['temp_path'], commands))
 
     print("\nSTEP 3: Updating metadata using ExifTool...")
