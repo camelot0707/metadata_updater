@@ -15,7 +15,7 @@ A Python script to repair missing or incorrect photo and video metadata (EXIF da
 - Python 3.11+ 
     - consider using [Anaconda](https://anaconda.org/) to easily manage and switch between Python versions
 - ExifTool 13.30+
-    - [ExiTool] (https://exiftool.org/) not included in this repository; must be downloaded separately
+    - The external tool [ExiTool](https://exiftool.org/) not included in this repository; must be downloaded separately
 
   - **To install ExifTool on Windows:**
     1. Go to [https://exiftool.org/](https://exiftool.org/) and download the Windows executable zip archive.
