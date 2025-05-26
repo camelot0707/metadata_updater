@@ -1,2 +1,4 @@
 # Ignore the Insignts folder
 Insights/
+# Ignore the exiftool folder
+exiftool-13.29_64
